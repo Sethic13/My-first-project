@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import monitor
 
@@ -19,6 +19,26 @@ def page(passes, venue=monitor.VENUE_ID):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_fetch_reports_http_failure_without_logging_response(self):
+        response = Mock(returncode=22, stdout="sensitive response\n403")
+        with patch('monitor.subprocess.run', return_value=response):
+            with self.assertRaisesRegex(ValueError, r"curl exit 22, HTTP 403") as error:
+                monitor.fetch_passes()
+        self.assertNotIn('sensitive response', str(error.exception))
+
+    def test_fetch_parses_success_with_status_suffix(self):
+        response = Mock(returncode=0, stdout=page([ticket()]) + '\n200')
+        with patch('monitor.subprocess.run', return_value=response):
+            self.assertEqual(len(monitor.fetch_passes()), 1)
+
+    def test_email_test_does_not_fetch_lineleap(self):
+        with patch('sys.argv', ['monitor.py', '--test-email']), \
+                patch('monitor.fetch_passes') as fetch, \
+                patch('monitor.send_alert') as send:
+            monitor.main()
+        fetch.assert_not_called()
+        send.assert_called_once_with({}, test=True)
+
     def test_extracts_only_lineskip(self):
         parsed = monitor.parse_passes(page([ticket(), dict(ticket(), type="Cover")]))
         self.assertEqual(len(parsed), 1)

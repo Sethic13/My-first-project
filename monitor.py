@@ -68,10 +68,22 @@ def fetch_passes():
     # curl uses this cloud environment's supported HTTPS proxy configuration.
     result = subprocess.run(
         ["curl", "--fail", "--silent", "--show-error", "--location",
-         "--connect-timeout", "10", "--max-time", "30", VENUE_URL],
-        capture_output=True, text=True, check=True,
+         "--connect-timeout", "10", "--max-time", "30",
+         "--retry", "2", "--retry-delay", "2", "--retry-max-time", "60",
+         "--write-out", "\n%{http_code}", VENUE_URL],
+        capture_output=True, text=True, check=False,
     )
-    return parse_passes(result.stdout)
+    body, _, status = result.stdout.rpartition("\n")
+    if result.returncode:
+        # Only log numeric transport status, never response bodies or proxy settings.
+        http = status if len(status) == 3 and status.isdigit() else "unknown"
+        explanations = {6: "DNS lookup failed", 7: "connection failed",
+                        22: "website returned an HTTP error", 28: "request timed out",
+                        35: "TLS connection failed", 60: "TLS certificate verification failed"}
+        detail = explanations.get(result.returncode, "network request failed")
+        raise ValueError(f"LineLeap fetch failed: {detail}; curl exit {result.returncode}, "
+                         f"HTTP {http}. Gmail was not contacted.")
+    return parse_passes(body)
 
 
 def load_state(path):
@@ -100,13 +112,17 @@ def email_settings():
     return {name: os.environ[name] for name in required}
 
 
-def send_alert(passes):
+def send_alert(passes, test=False):
     settings = email_settings()
     message = EmailMessage()
-    message["Subject"] = "New Rick's LineSkip listing on LineLeap"
+    message["Subject"] = ("Rick's alerts: Gmail connection test" if test else
+                          "New Rick's LineSkip listing on LineLeap")
     message["From"] = settings["SMTP_USERNAME"]
     message["To"] = settings["ALERT_TO"]
-    lines = ["New LineSkip listings appeared for Rick's American Cafe in Ann Arbor:", ""]
+    lines = (["Your Gmail connection for Rick's alerts is working.",
+              "This test does not check LineLeap or confirm that monitoring works.", ""]
+             if test else
+             ["New LineSkip listings appeared for Rick's American Cafe in Ann Arbor:", ""])
     for item in passes.values():
         lines.append(f"{item['name']} | event {item['productEventId']} | "
                      f"${item['pricePennies'] / 100:.2f}")
@@ -149,11 +165,11 @@ def main():
     parser.add_argument("--state", type=Path, default=Path(".monitor-state/state.json"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--test-email", action="store_true",
-                        help="Email the current listings without updating history.")
+                        help="Test Gmail independently of LineLeap without updating history.")
     args = parser.parse_args()
     try:
         if args.test_email:
-            send_alert(fetch_passes())
+            send_alert({}, test=True)
             print("Test email accepted by the email provider.")
         else:
             if not args.dry_run:

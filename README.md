@@ -45,7 +45,8 @@ Email may also be delayed. Gmail's sending limits still apply.
    - `ENABLE_EMAIL_MONITOR`: `true` once ready.
 6. Open **Actions → Rick's LineSkip email monitor → Run workflow**, and check
    **test_email**. Check your inbox and spam folder. This sends a real test email
-   with current listings and leaves notification history alone.
+   independently of LineLeap and leaves notification history alone. This verifies
+   Gmail delivery only; a successful normal run is also needed to verify monitoring.
 7. Run it again with **test_email unchecked** to save the initial baseline.
    Future scheduled checks email newly listed passes.
 
