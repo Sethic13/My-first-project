@@ -1,0 +1,78 @@
+name: Rick's LineSkip email monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_email:
+        description: Send a test email with current listings
+        type: boolean
+        default: false
+  schedule:
+    - cron: '2-59/5 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ricks-lineskip-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # Opt in only after checking the free Actions allowance for this repository.
+    if: vars.ENABLE_EMAIL_MONITOR == 'true' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore notification history
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .monitor-state
+          git ls-remote --exit-code --heads origin monitor-state > /tmp/monitor-ref || result=$?
+          case "${result:-0}" in
+            0)
+              git fetch --depth=1 origin monitor-state
+              git show FETCH_HEAD:state.json > .monitor-state/state.json
+              git rev-parse FETCH_HEAD > .monitor-state/base-commit
+              ;;
+            2) echo "First run: no notification history yet." ;;
+            *) echo "Cannot read notification history."; exit 1 ;;
+          esac
+      - name: Check listings and email new releases
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          TEST_EMAIL: ${{ inputs.test_email }}
+        run: |
+          if [ "$TEST_EMAIL" = "true" ]; then
+            python monitor.py --test-email
+          else
+            python monitor.py
+          fi
+      - name: Save notification history
+        if: inputs.test_email != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          state_repo=$(mktemp -d)
+          git init "$state_repo"
+          git -C "$state_repo" checkout --orphan monitor-state
+          if [ -f .monitor-state/base-commit ]; then
+            git -C "$state_repo" fetch --update-shallow "$GITHUB_WORKSPACE" "$(cat .monitor-state/base-commit)"
+            git -C "$state_repo" reset --soft FETCH_HEAD
+          fi
+          cp .monitor-state/state.json "$state_repo/state.json"
+          git -C "$state_repo" config user.name 'LineSkip monitor'
+          git -C "$state_repo" config user.email 'monitor@users.noreply.github.com'
+          git -C "$state_repo" add state.json
+          git -C "$state_repo" commit -m 'Update notification history'
+          # Push from the checkout so checkout's scoped GitHub authentication applies.
+          git fetch "$state_repo" monitor-state
+          git push origin FETCH_HEAD:refs/heads/monitor-state
