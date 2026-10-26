@@ -7,8 +7,10 @@ on:
         description: Send a test email with current listings
         type: boolean
         default: false
-  schedule:
-    - cron: '2-59/5 * * * *'
+  # Scheduled checks are paused: LineLeap returned HTTP 403 from GitHub runners.
+  # Restore only after a normal manual run successfully fetches the venue page.
+  # schedule:
+  #   - cron: '2-59/5 * * * *'
 
 permissions:
   contents: write

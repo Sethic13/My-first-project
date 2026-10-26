@@ -8,10 +8,14 @@ be detected reliably from the available page data.
 
 ## Status
 
-Implemented locally, **not deployed or enabled**. Live page fetching is verified;
-email delivery requires your Gmail setup and a real test. Future releases must
-appear on the public page before we can detect them. This coding session does not
-provide an always-running service.
+Deployed to GitHub, but **scheduled checks are paused and alerts are not working**.
+Gmail test delivery succeeded. A normal GitHub Actions run returned HTTP 403 when
+fetching LineLeap, before sending email or saving history. Fetching succeeds from
+the development environment, which does not establish access from GitHub runners.
+Do not restore the commented-out schedule until a normal manual run successfully
+fetches the venue page and saves history. Gmail secrets do not need to be replaced.
+Future releases must appear on the public page before we can detect them. This
+coding session does not provide an always-running service.
 
 ## Free hosting
 
